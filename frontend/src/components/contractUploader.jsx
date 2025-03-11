@@ -4,7 +4,6 @@ import { useState } from "react"
 import axios from "axios"
 import { Upload, FileText, AlertCircle, CheckCircle, ArrowRight } from "lucide-react"
 
-// Updated imports to match the available exports
 import { Card, CardContent, CardFooter, CardHeader } from "./ui/Card"
 import { Alert } from "./ui/Alert"
 import { Badge } from "./ui/Badge"
