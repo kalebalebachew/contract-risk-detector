@@ -1,16 +1,22 @@
 const fs = require('fs');
 const pdf = require('pdf-parse');
+const { analyzeContract } = require('../services/geminiService');
 
 exports.uploadContract = async (req, res) => {
-  const filePath = req.file.path;
-  const dataBuffer = fs.readFileSync(filePath);
-
-  pdf(dataBuffer).then(function(data) {
-    const contractText = data.text;
-    // TODO: Send contractText to Gemini API for analysis 
+  try {
+    const filePath = req.file.path;
+    const dataBuffer = fs.readFileSync(filePath);
     
-    res.json({ text: contractText });
-  }).catch(err => {
-    res.status(500).json({ error: 'Error parsing PDF' });
-  });
+    const data = await pdf(dataBuffer);
+    const contractText = data.text;
+    
+    const analysis = await analyzeContract(contractText);
+    
+    fs.unlinkSync(filePath);
+    
+    res.json({ analysis });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error processing contract' });
+  }
 };
