@@ -1,7 +1,7 @@
 const fs = require("fs");
 const pdf = require("pdf-parse");
 const { analyzeContract } = require("../services/geminiService");
-const { createNotionPage } = require("../services/notionService");
+const { createNotionPage, generateNegotiationEmailDraft } = require("../services/notionService");
 
 exports.uploadContract = async (req, res) => {
   try {

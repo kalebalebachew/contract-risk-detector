@@ -24,9 +24,10 @@ function splitTextIntoChunks(text, maxLength = 2000) {
 /**
  * generateNegotiationEmailDraft - Generates a draft text based on the contract analysis.
  * @param {Array} analysis - An array of objects representing each risky clause.
+ * @param {string} [analystEmail] - Optional email of the analyst for personalization (e.g., from frontend).
  * @returns {string} - The negotiation draft text.
  */
-async function generateNegotiationEmailDraft(analysis) {
+async function generateNegotiationEmailDraft(analysis, analystEmail = null) {
   let riskyDetails = "";
   analysis.forEach((item, index) => {
     if (item && item.clause && item.risk && item.suggestion) {
@@ -34,9 +35,26 @@ async function generateNegotiationEmailDraft(analysis) {
     }
   });
 
-  const prompt = `You are a professional contract negotiation advisor. Below are the clauses from a contract review:
+  let companyName = "the company";
+  if (analysis.length > 0) {
+    const firstClause = analysis[0].clause || "";
+    const potentialCompany = firstClause.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/);
+    if (potentialCompany) {
+      companyName = potentialCompany[0];
+    }
+  }
+
+  let analystName = "your team";
+  if (analystEmail) {
+    const nameMatch = analystEmail.match(/^([^@]+)@/);
+    if (nameMatch) {
+      analystName = nameMatch[1].replace(/\./g, " ").replace(/^\w/, (c) => c.toUpperCase());
+    }
+  }
+
+  const prompt = `You are a professional contract negotiation advisor. Below are the clauses from a contract review with ${companyName}:
 ${riskyDetails}
-Draft a friendly, professional message outlining a proposed renegotiation meeting. Include a proposed meeting schedule and next steps to address these clauses. Provide the full text in plain language.`;
+Draft a friendly, professional email outlining a proposed renegotiation meeting with ${companyName}. Do not include a specific date; instead, suggest scheduling a convenient time in the near future. Address the email from ${analystName} (or keep it generic if no name is provided). Include next steps to address these clauses in plain language, keeping the tone genuine and collaborative.`;
 
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -64,14 +82,14 @@ Draft a friendly, professional message outlining a proposed renegotiation meetin
  * createNotionPage - Creates a Notion page with a renegotiation meeting schedule and a to-do list.
  * @param {Array} analysis - Array of objects representing each contract clause.
  * @param {string} [negotiationDraft] - Optional pre-generated draft text (if not provided, it will be generated).
+ * @param {string} [analystEmail] - Optional email of the analyst for personalization.
  * @returns {Object} - The created Notion page data.
  */
-async function createNotionPage(analysis = [], negotiationDraft = null) {
+async function createNotionPage(analysis = [], negotiationDraft = null, analystEmail = null) {
   try {
-    // Generate negotiation draft if not provided
     let finalDraft = negotiationDraft;
     if (!finalDraft) {
-      finalDraft = await generateNegotiationEmailDraft(analysis);
+      finalDraft = await generateNegotiationEmailDraft(analysis, analystEmail);
     }
 
     const meetingChunks = splitTextIntoChunks(
@@ -146,7 +164,7 @@ async function createNotionPage(analysis = [], negotiationDraft = null) {
 
     const pageData = {
       parent: {
-        database_id: databaseId, 
+        database_id: databaseId,
       },
       properties: {
         "Task name": {
@@ -160,18 +178,17 @@ async function createNotionPage(analysis = [], negotiationDraft = null) {
         },
         "Status": {
           status: {
-            name: "Not started", 
+            name: "Not started",
           },
         },
         "Assignee": {
           people: [
-       
-           
+        
           ],
         },
         "Due date": {
           date: {
-            start: "2025-03-15", 
+            start: "2025-03-15",
           },
         },
         "Priority": {
@@ -182,23 +199,20 @@ async function createNotionPage(analysis = [], negotiationDraft = null) {
         "Task type": {
           multi_select: [
             {
-              name: "Polish", 
+              name: "Polish",
             },
           ],
         },
         "Effort level": {
           select: {
-            name: "Medium", 
+            name: "Medium",
           },
         },
       },
       children: childrenBlocks,
     };
 
-    console.log(
-      "Creating Notion page with data:",
-      JSON.stringify(pageData, null, 2)
-    );
+    console.log("Creating Notion page with data:", JSON.stringify(pageData, null, 2));
     const response = await notion.pages.create(pageData);
     console.log("Notion page created successfully:", response);
     return response;
