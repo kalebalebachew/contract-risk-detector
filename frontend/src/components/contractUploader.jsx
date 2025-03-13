@@ -1,146 +1,333 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import axios from "axios"
-import { Upload, FileText, AlertCircle, CheckCircle, ArrowRight } from "lucide-react"
+import { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import { Upload, FileText, AlertCircle, CheckCircle, ArrowRight, Clipboard, X } from "lucide-react";
+import { toast, ToastContainer } from "react-toastify"; 
+import "react-toastify/dist/ReactToastify.css"; 
 
-import { Card, CardContent, CardFooter, CardHeader } from "./ui/Card"
-import { Alert } from "./ui/Alert"
-import { Badge } from "./ui/Badge"
-import { Separator } from "./ui/Separator"
-import { Button } from "./ui/Button"
+import { Card, CardContent, CardFooter, CardHeader } from "./ui/Card";
+import { Alert } from "./ui/Alert";
+import { Badge } from "./ui/Badge";
+import { Separator } from "./ui/Separator";
+import { Button } from "./ui/Button";
+import { Tooltip } from "./ui/Tooltip"; 
+
+const interFont = `
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  html, body, * {
+    font-family: 'Inter', sans-serif !important;
+  }
+`;
+
+if (typeof document !== "undefined") {
+  const styleSheet = document.createElement("style");
+  styleSheet.innerText = interFont;
+  document.head.appendChild(styleSheet);
+}
 
 export default function ContractUploader() {
-  const [file, setFile] = useState(null)
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [dragActive, setDragActive] = useState(false)
+  const [file, setFile] = useState(null);
+  const [textInput, setTextInput] = useState(""); 
+  const [useTextInput, setUseTextInput] = useState(false); 
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState(""); 
+  const [setupNotion, setSetupNotion] = useState(false);
+  const resultRef = useRef(null); 
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem("contractUploaderEmail");
+    if (savedEmail) {
+      setEmail(savedEmail);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (email) {
+      localStorage.setItem("contractUploaderEmail", email);
+    }
+  }, [email]);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0])
-      setResult(null)
+      setFile(e.target.files[0]);
+      setResult(null);
     }
-  }
+  };
+
+  const handleClearFile = () => {
+    setFile(null);
+    setResult(null);
+  };
 
   const handleDrag = (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-
+    e.preventDefault();
+    e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
+      setDragActive(true);
     } else if (e.type === "dragleave") {
-      setDragActive(false)
+      setDragActive(false);
     }
-  }
+  };
 
   const handleDrop = (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0])
-      setResult(null)
+      setFile(e.dataTransfer.files[0]);
+      setResult(null);
     }
-  }
+  };
+
+  const validateEmail = (value) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!value) {
+      setEmailError("Email is required");
+    } else if (!emailRegex.test(value)) {
+      setEmailError("Please enter a valid email address");
+    } else {
+      setEmailError("");
+    }
+  };
+
+  const handleEmailChange = (e) => {
+    const value = e.target.value;
+    setEmail(value);
+    validateEmail(value);
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Analysis results copied to clipboard!", {
+        position: "top-right",
+        autoClose: 3000,
+      });
+    });
+  };
 
   const uploadContract = async () => {
-    if (!file) {
+    if (!file && !textInput) {
       setResult({
         analysis: {
           status: "error",
-          message: "Please select a file to upload",
+          message: "Please select a file or paste text to analyze",
           analysis: null,
         },
-      })
-      return
+      });
+      return;
+    }
+    if (!email) {
+      setResult({
+        analysis: {
+          status: "error",
+          message: "Please enter your email address",
+          analysis: null,
+        },
+      });
+      return;
+    }
+    if (emailError) {
+      setResult({
+        analysis: {
+          status: "error",
+          message: "Please enter a valid email address",
+          analysis: null,
+        },
+      });
+      return;
     }
 
-    setLoading(true)
-
-    const formData = new FormData()
-    formData.append("contract", file)
+    setLoading(true);
+    const formData = new FormData();
+    if (useTextInput) {
+      formData.append("contractText", textInput);
+    } else {
+      formData.append("contract", file); 
+    }
+    formData.append("email", email);
+    formData.append("setupNotion", setupNotion);
 
     try {
-      const response = await axios.post("http://localhost:5000/api/contracts/upload", formData)
-      setResult(response.data)
+      const response = await axios.post("http://localhost:5000/api/contracts/upload", formData);
+      setResult(response.data);
+      toast.success("Contract analyzed successfully!", {
+        position: "top-right",
+        autoClose: 3000,
+      });
+      if (resultRef.current) {
+        resultRef.current.scrollIntoView({ behavior: "smooth" });
+      }
     } catch (error) {
-      console.error("Upload error:", error)
+      console.error("Upload error:", error);
       setResult({
         analysis: {
           status: "error",
           message: error.response?.data?.message || "Failed to analyze the contract. Please try again.",
           analysis: null,
         },
-      })
+      });
+      toast.error("Failed to analyze the contract.", {
+        position: "top-right",
+        autoClose: 3000,
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="max-w-3xl mx-auto p-4 md:p-8">
-      <Card className="overflow-hidden border-none shadow-lg">
-        <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6">
-          <h2 className="text-2xl font-bold flex items-center gap-2 m-0">
-            <FileText className="h-6 w-6" />
+    <div className="max-w-4xl mx-auto p-4 md:p-8">
+      <ToastContainer />
+
+      <Card className="overflow-hidden border-none shadow-xl rounded-2xl">
+        <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-8">
+          <h2 className="text-3xl font-bold flex items-center gap-3 m-0">
+            <FileText className="h-8 w-8" />
             Contract Analysis
           </h2>
-          <p className="text-indigo-100 mt-1">Upload your contract document for AI-powered risk analysis</p>
+          <p className="text-indigo-100 mt-2 text-lg">
+            Upload or paste your contract for AI-powered risk analysis
+          </p>
         </CardHeader>
 
-        <CardContent className="p-6 space-y-6">
-          {/* File Upload Area */}
-          <div
-            className={`relative border-2 border-dashed rounded-xl p-8 transition-all duration-200 ease-in-out text-center ${
-              dragActive
-                ? "border-indigo-500 bg-indigo-50"
-                : file
-                  ? "border-green-500 bg-green-50"
-                  : "border-gray-300 hover:border-indigo-400 hover:bg-gray-50"
-            }`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-          >
-            <input
-              type="file"
-              onChange={handleFileChange}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-
-            <div className="flex flex-col items-center justify-center gap-2">
-              <div className={`rounded-full p-3 ${file ? "bg-green-100" : "bg-indigo-100"}`}>
-                <Upload className={`h-6 w-6 ${file ? "text-green-600" : "text-indigo-600"}`} />
-              </div>
-
-              {file ? (
-                <>
-                  <p className="text-sm font-medium text-green-600">File selected</p>
-                  <p className="text-gray-600 font-medium">{file.name}</p>
-                  <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium text-gray-700">Drag and drop your contract file here</p>
-                  <p className="text-sm text-gray-500">or click to browse files (PDF, DOCX, TXT)</p>
-                </>
-              )}
-            </div>
+        <CardContent className="p-8 space-y-8">
+          <div className="flex justify-center gap-4">
+            <Button
+              onClick={() => setUseTextInput(false)}
+              className={`px-4 py-2 rounded-full transition-all duration-200 ${
+                !useTextInput
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Upload File
+            </Button>
+            <Button
+              onClick={() => setUseTextInput(true)}
+              className={`px-4 py-2 rounded-full transition-all duration-200 ${
+                useTextInput
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Paste Text
+            </Button>
           </div>
 
-          {/* Action Button */}
+          {useTextInput ? (
+            <div className="relative border border-gray-300 rounded-xl p-6 transition-all duration-200">
+              <textarea
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Paste your contract text here..."
+                className="w-full h-40 p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+                aria-label="Paste contract text"
+              />
+            </div>
+          ) : (
+            <div
+              className={`relative border-2 border-dashed rounded-xl p-8 transition-all duration-300 ease-in-out text-center ${
+                dragActive
+                  ? "border-indigo-500 bg-indigo-50 scale-105"
+                  : file
+                  ? "border-green-500 bg-green-50"
+                  : "border-gray-300 hover:border-indigo-400 hover:bg-gray-50"
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              role="region"
+              aria-label="Drag and drop contract file here"
+            >
+              <input
+                type="file"
+                onChange={handleFileChange}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                aria-hidden="true"
+              />
+              <div className="flex flex-col items-center justify-center gap-3">
+                <div
+                  className={`rounded-full p-4 transition-all duration-200 ${
+                    file ? "bg-green-100" : "bg-indigo-100"
+                  } ${loading ? "animate-pulse" : ""}`}
+                >
+                  <Upload className={`h-8 w-8 ${file ? "text-green-600" : "text-indigo-600"}`} />
+                </div>
+                {file ? (
+                  <>
+                    <p className="text-sm font-semibold text-green-600">File Selected</p>
+                    <p className="text-gray-700 font-medium">{file.name}</p>
+                    <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <Button
+                      onClick={handleClearFile}
+                      className="mt-2 px-4 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded-full flex items-center gap-2"
+                    >
+                      <X className="h-4 w-4" />
+                      Clear File
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold text-gray-700">Drag and drop your contract file here</p>
+                    <p className="text-sm text-gray-500">or click to browse files (PDF, DOCX, TXT)</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="email" className="font-semibold text-gray-700">
+              Your Email Address
+            </label>
+            <input
+              type="email"
+              id="email"
+              placeholder="your.email@example.com"
+              className={`w-full p-3 border rounded-lg transition-all duration-200 ${
+                emailError ? "border-red-500" : "border-gray-300 focus:ring-2 focus:ring-indigo-500"
+              }`}
+              value={email}
+              onChange={handleEmailChange}
+              aria-invalid={emailError ? "true" : "false"}
+              aria-describedby={emailError ? "email-error" : undefined}
+            />
+            {emailError && (
+              <p id="email-error" className="text-sm text-red-600">
+                {emailError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="setupNotion"
+              checked={setupNotion}
+              onChange={(e) => setSetupNotion(e.target.checked)}
+              className="h-5 w-5 text-indigo-600 rounded"
+            />
+            <Tooltip content="This will create a task in Notion with the analysis results, including meeting reminders and follow-up actions.">
+              <label htmlFor="setupNotion" className="text-gray-700 cursor-pointer">
+                Add this analysis as a task in Notion
+              </label>
+            </Tooltip>
+          </div>
+
           <Button
             onClick={uploadContract}
-            disabled={loading || !file}
-            className="w-full py-6 text-base font-medium transition-all duration-200 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || (!file && !textInput) || !email || emailError}
+            className="w-full py-3 text-lg font-semibold transition-all duration-300 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
             {loading ? (
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-3">
                 <svg
-                  className="animate-spin h-5 w-5"
+                  className="animate-spin h-6 w-6"
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"
                   viewBox="0 0 24 24"
@@ -152,85 +339,100 @@ export default function ContractUploader() {
                     d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z"
                   />
                 </svg>
-                Analyzing Contract...
+                Analyzing...
               </span>
             ) : (
-              <span className="flex items-center gap-2">
-                Analyze Contract <ArrowRight className="h-5 w-5" />
+              <span className="flex items-center gap-3">
+                Analyze Contract <ArrowRight className="h-6 w-6" />
               </span>
             )}
           </Button>
         </CardContent>
 
         {result && result.analysis && (
-          <CardFooter className="flex flex-col p-0">
+          <CardFooter className="flex flex-col p-0" ref={resultRef}>
             <Separator />
-            <div className="p-6 w-full space-y-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">Analysis Results</h3>
-                <Badge
-                  className={`${
-                    result.analysis.status === "error" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
-                  }`}
-                >
-                  {result.analysis.status === "error" ? "Error" : "Success"}
-                </Badge>
+            <div className="p-8 w-full space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-xl font-semibold">Analysis Results</h3>
+                  <Badge
+                    className={`${
+                      result.analysis.status === "error"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-green-100 text-green-800"
+                    }`}
+                  >
+                    {result.analysis.status === "error" ? "Error" : "Success"}
+                  </Badge>
+                </div>
+                {result.analysis.status !== "error" && (
+                  <Button
+                    onClick={() =>
+                      copyToClipboard(
+                        JSON.stringify(result.analysis.analysis, null, 2)
+                      )
+                    }
+                    className="flex items-center gap-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg px-4 py-2"
+                  >
+                    <Clipboard className="h-5 w-5" />
+                    Copy Results
+                  </Button>
+                )}
               </div>
-
               <Alert
-                className={`flex gap-2 ${
+                className={`flex gap-3 p-4 rounded-lg ${
                   result.analysis.status === "error"
                     ? "border border-red-200 bg-red-50 text-red-800"
                     : "border border-green-200 bg-green-50 text-green-800"
                 }`}
               >
                 {result.analysis.status === "error" ? (
-                  <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                  <AlertCircle className="h-6 w-6 flex-shrink-0" />
                 ) : (
-                  <CheckCircle className="h-5 w-5 flex-shrink-0" />
+                  <CheckCircle className="h-6 w-6 flex-shrink-0" />
                 )}
                 <div>
-                  <p className="font-medium">{result.analysis.status === "error" ? "Error" : "Success"}</p>
+                  <p className="font-semibold">
+                    {result.analysis.status === "error" ? "Error" : "Success"}
+                  </p>
                   <p className="text-sm">{result.analysis.message}</p>
                 </div>
               </Alert>
-
               {result.analysis.analysis ? (
                 Array.isArray(result.analysis.analysis) && result.analysis.analysis.length > 0 ? (
-                  <div className="space-y-4 mt-4">
+                  <div className="space-y-6 mt-6">
                     {result.analysis.analysis.map((item, index) => (
-                      <div key={index} className="border rounded-md overflow-hidden shadow-sm">
-                        <div className="p-4">
+                      <div key={index} className="border rounded-lg overflow-hidden shadow-md bg-white">
+                        <div className="p-6">
                           {item.isContract === false ? (
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2">
-                                <AlertCircle className="h-5 w-5 text-amber-500" />
-                                <h4 className="font-medium text-amber-700">Not a Contract</h4>
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-3">
+                                <AlertCircle className="h-6 w-6 text-amber-500" />
+                                <h4 className="font-semibold text-amber-700">Not a Contract</h4>
                               </div>
                               <p className="text-gray-800">{item.reason}</p>
-                              <div className="mt-2 pt-2 border-t border-gray-100">
+                              <div className="mt-3 pt-3 border-t border-gray-100">
                                 <p className="text-sm text-gray-600">
-                                  <span className="font-medium">Summary:</span> {item.summary}
+                                  <span className="font-semibold">Summary:</span> {item.summary}
                                 </p>
                               </div>
                             </div>
                           ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                               <div>
-                                <h4 className="font-medium text-gray-800">Clause</h4>
-                                <p className="text-gray-700 mt-1 p-2 bg-gray-50 rounded border border-gray-100">
+                                <h4 className="font-semibold text-gray-800">Clause</h4>
+                                <p className="text-gray-700 mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
                                   {item.clause}
                                 </p>
                               </div>
-
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-3">
                                 <Badge className="bg-red-100 text-red-800">Risk Identified</Badge>
                                 <p className="text-red-600 font-medium">{item.risk}</p>
                               </div>
-
-                              <div className="mt-2 pt-2 border-t border-gray-100">
-                                <h4 className="font-medium text-gray-800">Suggestion</h4>
-                                <p className="text-gray-600 italic mt-1">{item.suggestion}</p>
+                              <div className="mt-3 pt-3 border-t border-gray-100">
+                                <h4 className="font-semibold text-gray-800">Suggestion</h4>
+                                <p className="text-gray-600 italic mt-2">{item.suggestion}</p>
                               </div>
                             </div>
                           )}
@@ -251,6 +453,5 @@ export default function ContractUploader() {
         )}
       </Card>
     </div>
-  )
+  );
 }
-
