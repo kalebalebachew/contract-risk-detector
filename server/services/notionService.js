@@ -24,10 +24,11 @@ function splitTextIntoChunks(text, maxLength = 2000) {
 /**
  * generateNegotiationEmailDraft - Generates a draft text based on the contract analysis.
  * @param {Array} analysis - An array of objects representing each risky clause.
- * @param {string} [analystEmail] - Optional email of the analyst for personalization (e.g., from frontend).
+ * @param {string} [analystEmail] - Optional email of the analyst for personalization.
+ * @param {string} [contractText] - Optional full contract text for company name inference.
  * @returns {string} - The negotiation draft text.
  */
-async function generateNegotiationEmailDraft(analysis, analystEmail = null) {
+async function generateNegotiationEmailDraft(analysis, analystEmail = null, contractText = "") {
   let riskyDetails = "";
   analysis.forEach((item, index) => {
     if (item && item.clause && item.risk && item.suggestion) {
@@ -36,12 +37,13 @@ async function generateNegotiationEmailDraft(analysis, analystEmail = null) {
   });
 
   let companyName = "the company";
-  if (analysis.length > 0) {
+  if (contractText) {
+    const potentialCompany = contractText.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/);
+    if (potentialCompany) companyName = potentialCompany[0];
+  } else if (analysis.length > 0) {
     const firstClause = analysis[0].clause || "";
     const potentialCompany = firstClause.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/);
-    if (potentialCompany) {
-      companyName = potentialCompany[0];
-    }
+    if (potentialCompany) companyName = potentialCompany[0];
   }
 
   let analystName = "your team";
@@ -54,7 +56,7 @@ async function generateNegotiationEmailDraft(analysis, analystEmail = null) {
 
   const prompt = `You are a professional contract negotiation advisor. Below are the clauses from a contract review with ${companyName}:
 ${riskyDetails}
-Draft a friendly, professional email outlining a proposed renegotiation meeting with ${companyName}. Do not include a specific date; instead, suggest scheduling a convenient time in the near future. Address the email from ${analystName} (or keep it generic if no name is provided). Include next steps to address these clauses in plain language, keeping the tone genuine and collaborative.`;
+Draft a friendly, professional email outlining a proposed renegotiation meeting with ${companyName}. Do not include a specific date; suggest scheduling a convenient time in the near future. Address the email from ${analystName} (or keep it generic if no name is provided). Include next steps to address these clauses in plain language, keeping the tone genuine and collaborative.`;
 
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -70,8 +72,7 @@ Draft a friendly, professional email outlining a proposed renegotiation meeting 
     if (!result.response?.candidates?.length) {
       throw new Error("No response from Gemini");
     }
-    const responseText = result.response.candidates[0].content.parts[0].text;
-    return responseText;
+    return result.response.candidates[0].content.parts[0].text;
   } catch (err) {
     console.error("Error generating negotiation draft:", err.message);
     throw err;
@@ -79,21 +80,31 @@ Draft a friendly, professional email outlining a proposed renegotiation meeting 
 }
 
 /**
- * createNotionPage - Creates a Notion page with a renegotiation meeting schedule and a to-do list.
+ * createNotionPage - Creates a dynamic Notion page based on provided configuration.
  * @param {Array} analysis - Array of objects representing each contract clause.
- * @param {string} [negotiationDraft] - Optional pre-generated draft text (if not provided, it will be generated).
- * @param {string} [analystEmail] - Optional email of the analyst for personalization.
+ * @param {Object} config - Configuration object with task details (e.g., dueDate, status, assigneeEmail, priority, taskType, effortLevel, includeEmailDraft).
+ * @param {string} [contractText] - Optional full contract text for email draft generation.
  * @returns {Object} - The created Notion page data.
  */
-async function createNotionPage(analysis = [], negotiationDraft = null, analystEmail = null) {
+async function createNotionPage(analysis = [], config = {}, contractText = "") {
   try {
-    let finalDraft = negotiationDraft;
-    if (!finalDraft) {
-      finalDraft = await generateNegotiationEmailDraft(analysis, analystEmail);
+    const {
+      dueDate = new Date().toISOString().split("T")[0],
+      status = "Not started",
+      assigneeEmail = null,
+      priority = "High",
+      taskType = ["Polish"],
+      effortLevel = "Medium",
+      includeEmailDraft = false,
+    } = config;
+
+    let negotiationDraft = null;
+    if (includeEmailDraft) {
+      negotiationDraft = await generateNegotiationEmailDraft(analysis, assigneeEmail, contractText);
     }
 
     const meetingChunks = splitTextIntoChunks(
-      finalDraft ||
+      negotiationDraft ||
         "Meeting scheduled: Please review the proposed contract revisions and schedule a follow-up meeting.",
       2000
     );
@@ -163,49 +174,47 @@ async function createNotionPage(analysis = [], negotiationDraft = null, analystE
     const childrenBlocks = [...meetingBlocks, ...clauseBlocks];
 
     const pageData = {
-      parent: {
-        database_id: databaseId,
-      },
+      parent: { database_id: databaseId },
       properties: {
         "Task name": {
           title: [
             {
               text: {
-                content: "Contract Review & Renegotiation Task",
+                content: `Contract Review & Renegotiation Task - ${new Date().toLocaleDateString()}`,
               },
             },
           ],
         },
         "Status": {
           status: {
-            name: "Not started",
+            name: status,
           },
         },
         "Assignee": {
-          people: [
-        
-          ],
+          people: assigneeEmail
+            ? await (async () => {
+                const users = await notion.users.list();
+                const user = users.results.find((u) => u.email === assigneeEmail);
+                return user ? [{ id: user.id }] : [];
+              })()
+            : [],
         },
         "Due date": {
           date: {
-            start: "2025-03-15",
+            start: dueDate,
           },
         },
         "Priority": {
           select: {
-            name: "High",
+            name: priority,
           },
         },
         "Task type": {
-          multi_select: [
-            {
-              name: "Polish",
-            },
-          ],
+          multi_select: taskType.map((type) => ({ name: type })),
         },
         "Effort level": {
           select: {
-            name: "Medium",
+            name: effortLevel,
           },
         },
       },
